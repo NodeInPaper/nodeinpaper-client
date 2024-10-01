@@ -3,6 +3,7 @@ package rest.armagan.nodeinpaperclient
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
+import java.util.*
 
 class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : WebSocketClient(serverUri) {
 
@@ -31,7 +32,12 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                 val req = nip.gson.fromJson(nip.gson.toJson(msg.data), SingularExecuteRequest::class.java);
                 val runnable = Runnable {
                     try {
-                        val response = nip.processActions(nip, req.path);
+                        val base = when (req.base) {
+                            "Plugin" -> nip
+                            else -> nip.refs[req.base]
+                        }
+
+                        val response = nip.processActions(base, req.path);
                         if (msg.responseId != null) {
                             if (response != null) {
                                 if (req.response.isNotEmpty()) {
@@ -44,12 +50,18 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                                         }
                                     }
 
-                                    sendResponse(msg.responseId, SingularExecuteResponse(true, responseList));
+                                    sendResponse(msg.responseId, WSMessageResponse(true, responseList));
                                 } else {
-                                    sendResponse(msg.responseId, SingularExecuteResponse(true, response));
+                                    if (nip.isObject(response)) {
+                                        val randomId = UUID.randomUUID().toString();
+                                        nip.refs[randomId] = ClientReferenceItem(randomId, response, System.currentTimeMillis());
+                                        sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(randomId)));
+                                    } else {
+                                        sendResponse(msg.responseId, WSMessageResponse(true, response));
+                                    }
                                 }
                             } else {
-                                sendResponse(msg.responseId, SingularExecuteResponse(true, null));
+                                sendResponse(msg.responseId, WSMessageResponse(true, null));
                             }
                         }
                     } catch (e: Exception) {
@@ -57,7 +69,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                         nip.logger.warning(e.message)
                         e.printStackTrace();
                         if (msg.responseId !== null) {
-                            sendResponse(msg.responseId, SingularExecuteResponse(false, e.message ?: "An error occurred while processing actions."))
+                            sendResponse(msg.responseId, WSMessageResponse(false, e.message ?: "An error occurred while processing actions."))
                         }
                     }
                 }
@@ -66,6 +78,29 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     nip.server.scheduler.runTask(nip, runnable);
                 } else {
                     nip.server.scheduler.runTaskAsynchronously(nip, runnable);
+                }
+            }
+            "AccessReference" -> {
+                val req = nip.gson.fromJson(nip.gson.toJson(msg.data), GetReferenceRequest::class.java);
+                val ref = nip.refs[req.id];
+                if (msg.responseId != null) {
+                    if (ref != null) {
+                        ref.accessedAt = System.currentTimeMillis();
+                        if (req.path.isNotEmpty()) {
+                            val response = nip.processActions(nip, req.path);
+                            sendResponse(msg.responseId, WSMessageResponse(true, response));
+                        } else {
+                            sendResponse(msg.responseId, WSMessageResponse(true, ref.value));
+                        }
+                    } else {
+                        sendResponse(msg.responseId, WSMessageResponse(false, "Reference not found."));
+                    }
+                }
+            }
+            "RemoveReference" -> {
+                nip.refs.remove(msg.data as String);
+                if (msg.responseId != null) {
+                    sendResponse(msg.responseId, WSMessageResponse(true, null));
                 }
             }
             else -> {

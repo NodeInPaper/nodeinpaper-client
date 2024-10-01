@@ -2,6 +2,7 @@ package rest.armagan.nodeinpaperclient
 
 import com.google.gson.Gson
 import org.bukkit.plugin.java.JavaPlugin
+import org.bukkit.scheduler.BukkitTask
 import java.net.URI
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
@@ -10,31 +11,48 @@ import kotlin.reflect.full.*
 
 class NodeInPaperClient : JavaPlugin() {
 
+    private lateinit var refClearerTask: BukkitTask;
     private lateinit var ws: NIPWebSocketClient
     lateinit var gson: Gson;
+
+    lateinit var refs: MutableMap<String, ClientReferenceItem>;
 
     override fun onEnable() {
         saveDefaultConfig();
 
+        this.refs = mutableMapOf();
         this.gson = Gson();
         this.ws = NIPWebSocketClient(this, URI(config.getString("server-uri")!!));
         this.ws.connect();
+
+        val refTTL = config.getLong("reference-ttl-seconds", 7200);
+
+        this.refClearerTask = server.scheduler.runTaskTimerAsynchronously(
+            this,
+            Runnable {
+                val currentTime = System.currentTimeMillis();
+                val toRemove = this.refs.filter { currentTime - it.value.accessedAt > refTTL * 1000 }
+                toRemove.forEach { this.refs.remove(it.key) }
+            },
+            60 * 20L,
+            60 * 20L
+        );
     }
 
     override fun onDisable() {
         this.ws.disconnect();
+        this.refs.clear();
+
+        refClearerTask.cancel();
     }
 
-    fun findFunction(obj: Any, action: Action): KFunction<*>? {
-        // 1. Üye fonksiyonları kontrol et (normal ve üst sınıf fonksiyonları)
+    private fun findFunction(obj: Any, action: Action): KFunction<*>? {
         val memberFunction = obj::class.memberFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
         if (memberFunction != null) return memberFunction
 
-        // 2. Static fonksiyonları kontrol et
         val staticFunction = obj::class.staticFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
         if (staticFunction != null) return staticFunction
 
-        // 3. Üye genişletme fonksiyonlarını kontrol et
         val extensionFunction = obj::class.memberExtensionFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
         if (extensionFunction != null) return extensionFunction
 
@@ -42,7 +60,7 @@ class NodeInPaperClient : JavaPlugin() {
     }
 
 
-    fun processActions(obj: Any, actions: List<Action>): Any? {
+    fun processActions(obj: Any?, actions: List<Action>): Any? {
         var currentObj: Any? = obj
 
         for (action in actions) {
@@ -63,9 +81,18 @@ class NodeInPaperClient : JavaPlugin() {
                 "Apply" -> {
                     val function =  findFunction(currentObj, action);
                     if (function != null) {
-                        // logger.info("Calling function: ${function.name} args: ${function.parameters.stream().map { it.type }.toList().joinToString(", ")}")
                         try {
                             val args = action.args.mapIndexed { index, arg ->
+                                if (isObject(arg)) {
+                                    val ref = arg as Map<*, *>
+                                    if (ref.containsKey("__type__") && ref["__type__"] == "Reference") {
+                                        val id = ref["id"] as String
+                                        if (this.refs[id] != null) {
+                                            this.refs[id]?.accessedAt = System.currentTimeMillis();
+                                            return this.refs[id];
+                                        } else return null;
+                                    }
+                                }
                                 val paramType = function.parameters[index + 1].type.classifier as KClass<*>
                                 paramType.safeCast(arg) ?: throw IllegalArgumentException("Argument type mismatch for ${action.key}")
                             }
@@ -84,4 +111,11 @@ class NodeInPaperClient : JavaPlugin() {
         return currentObj;
     }
 
+    fun isObject(value: Any?): Boolean {
+        if (value == null) return false;
+        return when (value) {
+            is String, is Int, is Float, is Double, is Boolean, is Char, is Long, is Short, is Byte -> false
+            else -> true
+        }
+    }
 }

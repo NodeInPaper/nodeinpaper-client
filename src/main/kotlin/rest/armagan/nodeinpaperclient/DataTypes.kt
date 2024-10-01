@@ -7,5 +7,16 @@ data class WSEventMessage(val event: String, val data: Any, val responseId: Stri
 data class RequestResponseMapItem(val key: String, val path: List<Action>)
 data class ResponseMapItem(val key: String, val value: Any)
 
-data class SingularExecuteResponse(val ok: Boolean, val data: Any?)
-data class SingularExecuteRequest(val path: List<Action>, val sync: Boolean, val response: List<RequestResponseMapItem>)
+data class WSMessageResponse(val ok: Boolean, val data: Any?)
+
+data class SingularExecuteRequest(
+    val path: List<Action>,
+    val sync: Boolean,
+    val response: List<RequestResponseMapItem>,
+    val base: String = "Plugin"
+)
+data class GetReferenceRequest(val id: String, val path: List<Action>)
+
+
+data class ClientReferenceResponse(val id: String, val __type__: String = "Reference")
+data class ClientReferenceItem(val id: String, val value: Any? = null, var accessedAt: Long)
