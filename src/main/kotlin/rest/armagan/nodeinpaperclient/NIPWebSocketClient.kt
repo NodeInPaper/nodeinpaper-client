@@ -7,6 +7,7 @@ import java.net.URI
 class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : WebSocketClient(serverUri) {
 
     private var isDisconnectedManually = false
+    private var isReconnecting = false
 
     override fun onOpen(handshakedata: ServerHandshake?) {
         nip.logger.info("Connected to NodeInPaper server.")
@@ -28,12 +29,28 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
         when (msg.event) {
             "SingularExecute" -> {
                 val req = nip.gson.fromJson(nip.gson.toJson(msg.data), SingularExecuteRequest::class.java);
-
                 val runnable = Runnable {
                     try {
                         val response = nip.processActions(nip, req.path);
-                        if (msg.responseId != null && response != null) {
-                            sendResponse(msg.responseId, SingularExecuteResponse(true, response));
+                        if (msg.responseId != null) {
+                            if (response != null) {
+                                if (req.response.isNotEmpty()) {
+                                    val responseList: MutableList<ResponseMapItem> = mutableListOf();
+
+                                    for (item in req.response) {
+                                        val itemResponse = nip.processActions(response, item.path);
+                                        if (itemResponse != null) {
+                                            responseList.add(ResponseMapItem(item.key, itemResponse));
+                                        }
+                                    }
+
+                                    sendResponse(msg.responseId, SingularExecuteResponse(true, responseList));
+                                } else {
+                                    sendResponse(msg.responseId, SingularExecuteResponse(true, response));
+                                }
+                            } else {
+                                sendResponse(msg.responseId, SingularExecuteResponse(true, null));
+                            }
                         }
                     } catch (e: Exception) {
                         nip.logger.warning("An error occurred while processing actions from NodeInPaper server.")
@@ -78,10 +95,13 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
     }
 
     private fun attemptReconnect() {
+        if (isReconnecting) return;
+        isReconnecting = true;
         nip.server.scheduler.runTaskLaterAsynchronously(
             nip,
             Runnable {
                 try {
+                    isReconnecting = false;
                     nip.logger.info("Attempting to reconnect to NodeInPaper server.")
                     this.reconnect()
                 } catch (e: Exception) {
