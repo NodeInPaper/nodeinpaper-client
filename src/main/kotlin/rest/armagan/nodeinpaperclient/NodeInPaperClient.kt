@@ -83,19 +83,25 @@ class NodeInPaperClient : JavaPlugin() {
                     if (function != null) {
                         try {
                             val args = action.args.mapIndexed { index, arg ->
-                                if (isObject(arg)) {
-                                    val ref = arg as Map<*, *>
-                                    if (ref.containsKey("__type__") && ref["__type__"] == "Reference") {
-                                        val id = ref["id"] as String
-                                        if (this.refs[id] != null) {
-                                            this.refs[id]?.accessedAt = System.currentTimeMillis();
-                                            return this.refs[id];
-                                        } else return null;
+                                try {
+                                    val paramType = function.parameters[index + 1].type.classifier as KClass<*>
+                                    return@mapIndexed paramType.safeCast(arg) ?: arg;
+                                } catch (e: Exception) {
+                                    e.printStackTrace();
+                                    if (isObject(arg)) {
+                                        val ref = arg as Map<*, *>
+                                        if (ref.containsKey("__type__") && ref["__type__"] == "Reference") {
+                                            val id = ref["id"] as String
+                                            if (this.refs[id] != null) {
+                                                this.refs[id]!!.accessedAt = System.currentTimeMillis();
+                                                return@mapIndexed this.refs[id]!!.value ?: arg;
+                                            }
+                                        }
                                     }
+                                    return@mapIndexed arg;
                                 }
-                                val paramType = function.parameters[index + 1].type.classifier as KClass<*>
-                                paramType.safeCast(arg) ?: throw IllegalArgumentException("Argument type mismatch for ${action.key}")
                             }
+                            // logger.info("Calling function: ${action.key} with args: ${args.joinToString()}")
                             currentObj = function.call(currentObj, *args.toTypedArray())
                         } catch (e: Exception) {
                             throw IllegalArgumentException("An error occurred while calling function: ${action.key}", e)

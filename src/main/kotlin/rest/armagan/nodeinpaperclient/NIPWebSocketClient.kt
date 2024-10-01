@@ -27,6 +27,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
     }
 
     private fun wsEventMessage(msg: WSEventMessage) {
+        // nip.logger.info("Received event from NodeInPaper server: ${msg.event}, data: ${nip.gson.toJson(msg.data)}")
         when (msg.event) {
             "SingularExecute" -> {
                 val req = nip.gson.fromJson(nip.gson.toJson(msg.data), SingularExecuteRequest::class.java);
@@ -34,10 +35,11 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     try {
                         val base = when (req.base) {
                             "Plugin" -> nip
-                            else -> nip.refs[req.base]
+                            else -> nip.refs[req.base]?.value ?: nip
                         }
 
                         val response = nip.processActions(base, req.path);
+                        // nip.logger.info("Response: $response, base: $base, path: ${req.path.joinToString { it.key }}")
                         if (msg.responseId != null) {
                             if (response != null) {
                                 if (req.response.isNotEmpty()) {
