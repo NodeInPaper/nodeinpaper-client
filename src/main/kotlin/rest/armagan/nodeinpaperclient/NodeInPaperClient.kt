@@ -237,6 +237,8 @@ class NodeInPaperClient : JavaPlugin() {
         val commandObj = object : Command(commandName, description, usage, aliases) {
             override fun execute(sender: org.bukkit.command.CommandSender, label: String, args: Array<String>): Boolean {
 
+                if (!registeredCommands.containsKey(key)) return false;
+
                 val senderId = sender.hashCode().toString();
                 self.refs[senderId] = ClientReferenceItem(senderId, sender, System.currentTimeMillis());
 
