@@ -1,6 +1,9 @@
 package rest.armagan.nodeinpaperclient
 
 import com.google.gson.Gson
+import org.bukkit.Bukkit
+import org.bukkit.command.Command
+import org.bukkit.command.CommandMap
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.net.URI
@@ -17,12 +20,13 @@ class NodeInPaperClient : JavaPlugin() {
     private lateinit var refClearerTask: BukkitTask;
     private lateinit var ws: NIPWebSocketClient
     lateinit var gson: Gson;
-
     lateinit var refs: MutableMap<String, ClientReferenceItem>;
+    lateinit var registeredCommands: MutableMap<String, Command>;
 
     override fun onEnable() {
         saveDefaultConfig();
 
+        this.registeredCommands = mutableMapOf();
         this.refs = mutableMapOf();
         this.gson = Gson();
         this.ws = NIPWebSocketClient(this, URI(config.getString("server-uri")!!));
@@ -47,6 +51,7 @@ class NodeInPaperClient : JavaPlugin() {
     override fun onDisable() {
         this.ws.disconnect();
         this.refs.clear();
+        this.unregisterAllCommands();
 
         refClearerTask.cancel();
     }
@@ -209,5 +214,56 @@ class NodeInPaperClient : JavaPlugin() {
             e.printStackTrace()
         }
         return null
+    }
+
+    fun getCommandMap(): CommandMap {
+        Bukkit.getPluginManager().javaClass.getDeclaredField("commandMap").let {
+            it.isAccessible = true;
+            return it.get(Bukkit.getPluginManager()) as CommandMap
+        }
+    }
+
+    fun registerCommand(namespace: String, commandName: String, aliases: List<String>, description: String, usage: String) {
+        val commandMap = getCommandMap()
+        val self = this;
+        val key = "$namespace:$commandName";
+
+        if (registeredCommands.containsKey(key)) {
+            registeredCommands[key]!!.unregister(commandMap);
+            registeredCommands.remove(key);
+            return;
+        }
+
+        val commandObj = object : Command(commandName, description, usage, aliases) {
+            override fun execute(sender: org.bukkit.command.CommandSender, label: String, args: Array<String>): Boolean {
+
+                val senderId = sender.hashCode().toString();
+                self.refs[senderId] = ClientReferenceItem(senderId, sender, System.currentTimeMillis());
+
+                self.ws.sendEvent(
+                    "ExecuteCommand",
+                    ExecuteCommandResponse(
+                        commandName,
+                        namespace,
+                        label,
+                        args.toList(),
+                        ClientReferenceResponse(senderId)
+                    )
+                );
+
+                return true;
+            }
+        }
+
+        commandMap.register(namespace, commandObj);
+        registeredCommands[key] = commandObj;
+    }
+
+    fun unregisterAllCommands() {
+        val commandMap = getCommandMap();
+        registeredCommands.forEach { (_, command) ->
+            command.unregister(commandMap);
+        }
+        registeredCommands.clear();
     }
 }

@@ -140,6 +140,13 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                 }
             }
+            "RegisterCommand" -> {
+                val req = nip.gson.fromJson(nip.gson.toJson(msg.data), RegisterCommandRequest::class.java);
+                nip.registerCommand(req.namespace, req.name, req.aliases, req.description, req.usage);
+                if (msg.responseId != null) {
+                    sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
+                }
+            }
             else -> {
                 nip.logger.warning("Unknown event type received from NodeInPaper server: ${msg.event}")
             }
@@ -155,6 +162,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
     }
 
     override fun onClose(code: Int, reason: String?, remote: Boolean) {
+        nip.unregisterAllCommands();
         if (!isDisconnectedManually) {
             attemptReconnect()
         }

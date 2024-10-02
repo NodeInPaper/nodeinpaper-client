@@ -22,9 +22,24 @@ data class SingularExecuteRequest(
     val base: SingularExecuteBase,
     val noRef: Boolean = false
 )
-data class GetReferenceRequest(val id: String)
 
 data class ClientReferenceResponse(val id: String, val __type__: String = "Reference")
 data class ClientReferenceItem(val id: String, val value: Any? = null, var accessedAt: Long)
 
 data class ListResponse(val list: List<Any?>, val __type__: String = "List")
+
+data class ExecuteCommandResponse(
+    val name: String,
+    val namespace: String,
+    val label: String,
+    val args: List<String>,
+    val sender: ClientReferenceResponse
+)
+
+data class RegisterCommandRequest(
+    val name: String,
+    val namespace: String,
+    val aliases: List<String>,
+    val description: String,
+    val usage: String
+)
