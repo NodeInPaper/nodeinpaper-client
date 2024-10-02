@@ -3,4 +3,5 @@ version: '0.0.1'
 main: rest.armagan.nodeinpaperclient.NodeInPaperClient
 api-version: '1.21'
 prefix: NodeInPaperClient
+load: POSTWORLD
 authors: [ TheArmagan ]

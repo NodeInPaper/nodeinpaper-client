@@ -3,7 +3,6 @@ package rest.armagan.nodeinpaperclient
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
-import java.util.*
 
 class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : WebSocketClient(serverUri) {
 
@@ -55,9 +54,11 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                                     sendResponse(msg.responseId, WSMessageResponse(true, responseList));
                                 } else {
                                     if (nip.isObject(response)) {
-                                        val randomId = UUID.randomUUID().toString();
-                                        nip.refs[randomId] = ClientReferenceItem(randomId, response, System.currentTimeMillis());
-                                        sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(randomId)));
+                                        // val randomId = UUID.randomUUID().toString();
+                                        val id = response.hashCode().toString();
+                                        // nip.logger.info("Creating reference with id: $id, value: $response");
+                                        nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
+                                        sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
                                     } else {
                                         sendResponse(msg.responseId, WSMessageResponse(true, response));
                                     }
