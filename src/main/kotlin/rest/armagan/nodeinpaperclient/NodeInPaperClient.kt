@@ -173,9 +173,4 @@ class NodeInPaperClient : JavaPlugin() {
             else -> true
         }
     }
-
-    fun isArray(value: Any?): Boolean {
-        if (value == null) return false;
-        return value is List<*>
-    }
 }

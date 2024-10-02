@@ -42,24 +42,51 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                         // nip.logger.info("Response: $response, base: $base, path: ${req.path.joinToString { it.key }}")
                         if (msg.responseId != null) {
                             if (response != null) {
-                                if (req.response.isNotEmpty()) {
-                                    val responseList: MutableList<ResponseMapItem> = mutableListOf();
+                                if (response is List<*>) {
+                                    val resultList: MutableList<Any?> = mutableListOf();
 
-                                    for (item in req.response) {
-                                        val itemResponse = nip.processActions(response, item.path);
-                                        if (itemResponse != null) {
-                                            responseList.add(ResponseMapItem(item.key, itemResponse));
+                                    for (resItem in response) {
+                                        if (req.response.isNotEmpty()) {
+                                            val responseList: MutableList<ResponseMapItem> = mutableListOf();
+                                            for (reqResItem in req.response) {
+                                                val itemResponse = nip.processActions(resItem, reqResItem.path);
+                                                if (itemResponse != null) {
+                                                    responseList.add(ResponseMapItem(reqResItem.key, itemResponse));
+                                                }
+                                            }
+                                            resultList.add(responseList);
+                                        } else {
+                                            if (nip.isObject(resItem) && !req.noRef) {
+                                                val id = resItem.hashCode().toString();
+                                                nip.refs[id] = ClientReferenceItem(id, resItem, System.currentTimeMillis());
+                                                resultList.add(ClientReferenceResponse(id));
+                                            } else {
+                                                resultList.add(resItem);
+                                            }
                                         }
                                     }
 
-                                    sendResponse(msg.responseId, WSMessageResponse(true, responseList));
+                                    sendResponse(msg.responseId, WSMessageResponse(true, ListResponse(resultList)));
                                 } else {
-                                    if (nip.isObject(response) && !req.noRef) {
-                                        val id = response.hashCode().toString();
-                                        nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
-                                        sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
+                                    if (req.response.isNotEmpty()) {
+                                        val responseList: MutableList<ResponseMapItem> = mutableListOf();
+
+                                        for (item in req.response) {
+                                            val itemResponse = nip.processActions(response, item.path);
+                                            if (itemResponse != null) {
+                                                responseList.add(ResponseMapItem(item.key, itemResponse));
+                                            }
+                                        }
+
+                                        sendResponse(msg.responseId, WSMessageResponse(true, responseList));
                                     } else {
-                                        sendResponse(msg.responseId, WSMessageResponse(true, response));
+                                        if (nip.isObject(response) && !req.noRef) {
+                                            val id = response.hashCode().toString();
+                                            nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
+                                            sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
+                                        } else {
+                                            sendResponse(msg.responseId, WSMessageResponse(true, response));
+                                        }
                                     }
                                 }
                             } else {

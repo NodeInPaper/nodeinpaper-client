@@ -18,6 +18,7 @@ data class SingularExecuteRequest(
 )
 data class GetReferenceRequest(val id: String, val path: List<Action>)
 
-
 data class ClientReferenceResponse(val id: String, val __type__: String = "Reference")
 data class ClientReferenceItem(val id: String, val value: Any? = null, var accessedAt: Long)
+
+data class ListResponse(val list: List<Any?>, val __type__: String = "List")
