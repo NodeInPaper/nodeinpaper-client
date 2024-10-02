@@ -32,16 +32,24 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                 val req = nip.gson.fromJson(nip.gson.toJson(msg.data), SingularExecuteRequest::class.java);
                 val runnable = Runnable {
                     try {
-                        val base = when (req.base) {
+                        val base = when (req.base.type) {
                             "Plugin" -> nip
-                            else -> {
-                                if (nip.refs.containsKey(req.base)) {
-                                    nip.refs[req.base]!!.accessedAt = System.currentTimeMillis();
-                                    nip.refs[req.base]!!.value
+                            "Reference" -> {
+                                val ref = nip.refs[req.base.id as String];
+                                if (ref != null) {
+                                    ref.accessedAt = System.currentTimeMillis();
+                                    ref.value
                                 } else {
                                     null
                                 }
                             }
+                            "Class" -> {
+                                nip.loadClass(req.base.name as String);
+                            }
+                            "ClassFromPath" -> {
+                                nip.loadClassFromJar(req.base.file as String, req.base.name as String);
+                            }
+                            else -> null;
                         }
 
                         // nip.logger.info("Processing actions: ${req.path.joinToString { it.key }}")
@@ -115,18 +123,12 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     nip.server.scheduler.runTaskAsynchronously(nip, runnable);
                 }
             }
-            "AccessReference" -> {
-                val req = nip.gson.fromJson(nip.gson.toJson(msg.data), GetReferenceRequest::class.java);
-                val ref = nip.refs[req.id];
+            "KeepAliveReference" -> {
+                val ref = nip.refs[msg.data as String];
                 if (msg.responseId != null) {
                     if (ref != null) {
                         ref.accessedAt = System.currentTimeMillis();
-                        if (req.path.isNotEmpty()) {
-                            val response = nip.processActions(nip, req.path);
-                            sendResponse(msg.responseId, WSMessageResponse(true, response));
-                        } else {
-                            sendResponse(msg.responseId, WSMessageResponse(true, ref.value));
-                        }
+                        sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                     } else {
                         sendResponse(msg.responseId, WSMessageResponse(false, "Reference not found."));
                     }
@@ -135,7 +137,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
             "RemoveReference" -> {
                 nip.refs.remove(msg.data as String);
                 if (msg.responseId != null) {
-                    sendResponse(msg.responseId, WSMessageResponse(true, null));
+                    sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                 }
             }
             else -> {

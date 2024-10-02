@@ -4,8 +4,11 @@ import com.google.gson.Gson
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.net.URI
+import java.net.URL
+import java.net.URLClassLoader
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
+import kotlin.reflect.KProperty0
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.*
 
@@ -102,26 +105,40 @@ class NodeInPaperClient : JavaPlugin() {
         var currentObj: Any? = obj
 
         for (action in actions) {
-            if (currentObj == null) return null;
+            if (currentObj == null) return null
 
             when (action.type) {
                 "Get" -> {
-                    val property = currentObj::class.memberProperties.firstOrNull { it.name == action.key }
-                        ?: currentObj::class.memberExtensionProperties.firstOrNull { it.name == action.key }
-                        ?: currentObj::class.staticProperties.firstOrNull { it.name == action.key }
+                    val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
+
+                    // Önce member properties, sonra extension, ardından statik özelliklere bakıyoruz.
+                    val property = clazz.memberProperties.firstOrNull { it.name == action.key }
+                        ?: clazz.memberExtensionProperties.firstOrNull { it.name == action.key }
+                        ?: clazz.staticProperties.firstOrNull { it.name == action.key }
 
                     if (property != null) {
-                        currentObj = (property as KProperty1<Any, *>).get(currentObj)
+                        currentObj = when (property) {
+                            is KProperty1<*, *> -> {
+                                // KProperty1'in çalışabilmesi için currentObj'nin type'ı property'nin receiver'ı olmalı
+                                (property as KProperty1<Any?, *>).get(currentObj)
+                            }
+                            is KProperty0<*> -> property.get()
+                            else -> throw IllegalArgumentException("Unsupported property type: ${property::class}")
+                        }
                     } else {
-                        throw IllegalArgumentException("No property found with name: ${action.key}")
+                        // Eğer property bulunamazsa, bu sefer class'ın statik alanlarına bakıyoruz.
+                        try {
+                            val field = clazz.java.getField(action.key) // Statik field'ı kontrol et
+                            currentObj = field.get(null) // Statik olduğu için null context kullan
+                        } catch (e: NoSuchFieldException) {
+                            throw IllegalArgumentException("No property or static field found with name: ${action.key}")
+                        }
                     }
                 }
                 "Apply" -> {
-                    val function =  findFunction(currentObj, action);
+                    val function = findFunction(currentObj, action)
                     if (function != null) {
                         try {
-                            // logger.info("Calling function: ${action.key} with args: ${action.args.joinToString()}")
-
                             val args = action.args.mapIndexed { index, arg ->
                                 try {
                                     if (arg is Map<*, *> && arg["__type__"] == "Reference") {
@@ -149,8 +166,6 @@ class NodeInPaperClient : JavaPlugin() {
                                 }
                             }
 
-                            // logger.info("Calling function: ${action.key} with args: ${args.joinToString()}")
-
                             currentObj = function.call(currentObj, *args.toTypedArray())
                         } catch (e: Exception) {
                             throw IllegalArgumentException("An error occurred while calling function: ${action.key}", e)
@@ -163,8 +178,10 @@ class NodeInPaperClient : JavaPlugin() {
             }
         }
 
-        return currentObj;
+        return currentObj
     }
+
+
 
     fun isObject(value: Any?): Boolean {
         if (value == null) return false;
@@ -172,5 +189,25 @@ class NodeInPaperClient : JavaPlugin() {
             is String, is Int, is Float, is Double, is Boolean, is Char, is Long, is Short, is Byte -> false
             else -> true
         }
+    }
+
+    fun loadClassFromJar(jarFilePath: String, className: String): Class<*>? {
+        try {
+            val jarUrl = URL("jar:file:$jarFilePath!/")
+            val classLoader = URLClassLoader(arrayOf(jarUrl), this::class.java.classLoader)
+            return classLoader.loadClass(className)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    fun loadClass(className: String): Class<*>? {
+        try {
+            return Class.forName(className)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
     }
 }

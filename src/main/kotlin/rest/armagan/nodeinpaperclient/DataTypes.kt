@@ -9,14 +9,20 @@ data class ResponseMapItem(val key: String, val value: Any)
 
 data class WSMessageResponse(val ok: Boolean, val data: Any?)
 
+data class SingularExecuteBase(
+    val type: String,
+    val name: String? = null,
+    val id: String? = null,
+    val file: String? = null,
+)
 data class SingularExecuteRequest(
     val path: List<Action>,
     val sync: Boolean,
     val response: List<RequestResponseMapItem>,
-    val base: String = "Plugin",
+    val base: SingularExecuteBase,
     val noRef: Boolean = false
 )
-data class GetReferenceRequest(val id: String, val path: List<Action>)
+data class GetReferenceRequest(val id: String)
 
 data class ClientReferenceResponse(val id: String, val __type__: String = "Reference")
 data class ClientReferenceItem(val id: String, val value: Any? = null, var accessedAt: Long)
