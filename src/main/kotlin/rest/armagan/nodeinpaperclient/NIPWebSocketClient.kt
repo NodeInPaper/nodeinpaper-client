@@ -1,5 +1,6 @@
 package rest.armagan.nodeinpaperclient
 
+import org.bukkit.event.EventPriority
 import org.java_websocket.client.WebSocketClient
 import org.java_websocket.handshake.ServerHandshake
 import java.net.URI
@@ -71,10 +72,14 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                                             }
                                             resultList.add(responseList);
                                         } else {
-                                            if (nip.isObject(resItem) && !req.noRef) {
-                                                val id = resItem.hashCode().toString();
-                                                nip.refs[id] = ClientReferenceItem(id, resItem, System.currentTimeMillis());
-                                                resultList.add(ClientReferenceResponse(id));
+                                            if (nip.isObject(resItem)) {
+                                                if (!req.noRef) {
+                                                    val id = resItem.hashCode().toString();
+                                                    nip.refs[id] = ClientReferenceItem(id, resItem, System.currentTimeMillis());
+                                                    resultList.add(ClientReferenceResponse(id));
+                                                } else {
+                                                    resultList.add(null)    ;
+                                                }
                                             } else {
                                                 resultList.add(resItem);
                                             }
@@ -95,10 +100,14 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
 
                                         sendResponse(msg.responseId, WSMessageResponse(true, responseList));
                                     } else {
-                                        if (nip.isObject(response) && !req.noRef) {
-                                            val id = response.hashCode().toString();
-                                            nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
-                                            sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
+                                        if (nip.isObject(response)) {
+                                            if (!req.noRef) {
+                                                val id = response.hashCode().toString();
+                                                nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
+                                                sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
+                                            } else {
+                                                sendResponse(msg.responseId, WSMessageResponse(true, null));
+                                            }
                                         } else {
                                             sendResponse(msg.responseId, WSMessageResponse(true, response));
                                         }
@@ -147,6 +156,13 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                 }
             }
+            "RegisterEvent" -> {
+                val req = nip.gson.fromJson(nip.gson.toJson(msg.data), RegisterEventRequest::class.java);
+                nip.registerEvent(req.name, EventPriority.valueOf(req.priority));
+                if (msg.responseId != null) {
+                    sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
+                }
+            }
             else -> {
                 nip.logger.warning("Unknown event type received from NodeInPaper server: ${msg.event}")
             }
@@ -154,7 +170,12 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
     }
 
     fun sendEvent(event: String, data: Any, responseId: String? = null) {
-        send(nip.gson.toJson(WSEventMessage(event, data, responseId)))
+        try {
+            send(nip.gson.toJson(WSEventMessage(event, data, responseId)))
+        } catch (e: Exception) {
+            nip.logger.warning("An error occurred while sending an event to NodeInPaper server: $event, $data")
+            e.printStackTrace();
+        }
     }
 
     fun sendResponse(responseId: String, data: Any) {
@@ -163,6 +184,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
 
     override fun onClose(code: Int, reason: String?, remote: Boolean) {
         nip.unregisterAllCommands();
+        nip.unregisterAllEvents();
         if (!isDisconnectedManually) {
             attemptReconnect()
         }

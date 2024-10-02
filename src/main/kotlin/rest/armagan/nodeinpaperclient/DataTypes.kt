@@ -2,7 +2,7 @@ package rest.armagan.nodeinpaperclient
 
 data class Action(val key: String, val type: String, val args: List<Any>)
 
-data class WSEventMessage(val event: String, val data: Any, val responseId: String? = null)
+data class WSEventMessage(val event: String, val data: Any?, val responseId: String? = null)
 
 data class RequestResponseMapItem(val key: String, val path: List<Action>)
 data class ResponseMapItem(val key: String, val value: Any)
@@ -36,10 +36,20 @@ data class ExecuteCommandResponse(
     val sender: ClientReferenceResponse
 )
 
+data class ExecuteEventResponse(
+    val name: String,
+    val event: ClientReferenceResponse
+)
+
 data class RegisterCommandRequest(
     val name: String,
     val namespace: String,
     val aliases: List<String>,
     val description: String,
     val usage: String
+)
+
+data class RegisterEventRequest(
+    val name: String,
+    val priority: String,
 )

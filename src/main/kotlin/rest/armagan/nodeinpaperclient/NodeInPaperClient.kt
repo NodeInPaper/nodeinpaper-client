@@ -4,6 +4,10 @@ import com.google.gson.Gson
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandMap
+import org.bukkit.event.Event
+import org.bukkit.event.EventPriority
+import org.bukkit.event.HandlerList
+import org.bukkit.event.Listener
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.net.URI
@@ -14,8 +18,9 @@ import kotlin.reflect.KFunction
 import kotlin.reflect.KProperty0
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.*
+import kotlin.reflect.jvm.isAccessible
 
-class NodeInPaperClient : JavaPlugin() {
+class NodeInPaperClient : JavaPlugin(), Listener {
 
     private lateinit var refClearerTask: BukkitTask;
     private lateinit var ws: NIPWebSocketClient
@@ -51,6 +56,7 @@ class NodeInPaperClient : JavaPlugin() {
     override fun onDisable() {
         this.ws.disconnect();
         this.refs.clear();
+        this.unregisterAllEvents();
         this.unregisterAllCommands();
 
         refClearerTask.cancel();
@@ -109,34 +115,44 @@ class NodeInPaperClient : JavaPlugin() {
     fun processActions(obj: Any?, actions: List<Action>): Any? {
         var currentObj: Any? = obj
 
+        //logger.info("Processing actions: $obj, ${actions.joinToString { it.key }}")
+
         for (action in actions) {
             if (currentObj == null) return null
 
             when (action.type) {
                 "Get" -> {
-                    val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
-
-                    // Önce member properties, sonra extension, ardından statik özelliklere bakıyoruz.
-                    val property = clazz.memberProperties.firstOrNull { it.name == action.key }
-                        ?: clazz.memberExtensionProperties.firstOrNull { it.name == action.key }
-                        ?: clazz.staticProperties.firstOrNull { it.name == action.key }
-
-                    if (property != null) {
-                        currentObj = when (property) {
-                            is KProperty1<*, *> -> {
-                                // KProperty1'in çalışabilmesi için currentObj'nin type'ı property'nin receiver'ı olmalı
-                                (property as KProperty1<Any?, *>).get(currentObj)
-                            }
-                            is KProperty0<*> -> property.get()
-                            else -> throw IllegalArgumentException("Unsupported property type: ${property::class}")
-                        }
+                    if (currentObj is Map<*, *>) {
+                        currentObj = currentObj[action.key];
+                    } else if (currentObj is List<*>) {
+                        currentObj = currentObj[action.key.toInt()];
                     } else {
-                        // Eğer property bulunamazsa, bu sefer class'ın statik alanlarına bakıyoruz.
-                        try {
-                            val field = clazz.java.getField(action.key) // Statik field'ı kontrol et
-                            currentObj = field.get(null) // Statik olduğu için null context kullan
-                        } catch (e: NoSuchFieldException) {
-                            throw IllegalArgumentException("No property or static field found with name: ${action.key}")
+                        val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
+
+                        // Önce member properties, sonra extension, ardından statik özelliklere bakıyoruz.
+                        val property = clazz.memberProperties.firstOrNull { it.name == action.key }
+                            ?: clazz.memberExtensionProperties.firstOrNull { it.name == action.key }
+                            ?: clazz.staticProperties.firstOrNull { it.name == action.key }
+
+                        if (property != null) {
+                            property.isAccessible = true;
+
+                            currentObj = when (property) {
+                                is KProperty1<*, *> -> {
+                                    // KProperty1'in çalışabilmesi için currentObj'nin type'ı property'nin receiver'ı olmalı
+                                    (property as KProperty1<Any?, *>).get(currentObj)
+                                }
+                                is KProperty0<*> -> property.get()
+                                else -> throw IllegalArgumentException("Unsupported property type: ${property::class}")
+                            }
+                        } else {
+                            // Eğer property bulunamazsa, bu sefer class'ın statik alanlarına bakıyoruz.
+                            try {
+                                val field = clazz.java.getField(action.key) // Statik field'ı kontrol et
+                                currentObj = field.get(null) // Statik olduğu için null context kullan
+                            } catch (e: NoSuchFieldException) {
+                                throw IllegalArgumentException("No property or static field found with name: ${action.key}")
+                            }
                         }
                     }
                 }
@@ -183,7 +199,7 @@ class NodeInPaperClient : JavaPlugin() {
             }
         }
 
-        return currentObj
+        return currentObj;
     }
 
 
@@ -267,5 +283,31 @@ class NodeInPaperClient : JavaPlugin() {
             command.unregister(commandMap);
         }
         registeredCommands.clear();
+    }
+
+    fun registerEvent(className: String, priority: EventPriority) {
+        val clazz = loadClass(className) ?: return
+
+        val self = this
+
+        val eventClass = clazz as Class<out Event>
+
+        server.pluginManager.registerEvent(
+            eventClass,
+            this,
+            priority,
+            { listener: Listener, event: Event ->
+                val eventId = event.hashCode().toString()
+                self.refs[eventId] = ClientReferenceItem(eventId, event, System.currentTimeMillis())
+                // logger.info("Event received: $eventId, $event")
+
+                ws.sendEvent("ExecuteEvent", ExecuteEventResponse(className, ClientReferenceResponse(eventId)))
+            },
+            this
+        )
+    }
+
+    fun unregisterAllEvents() {
+        HandlerList.unregisterAll(this as Listener);
     }
 }
