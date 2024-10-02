@@ -34,7 +34,14 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     try {
                         val base = when (req.base) {
                             "Plugin" -> nip
-                            else -> nip.refs[req.base]?.value ?: nip
+                            else -> {
+                                if (nip.refs.containsKey(req.base)) {
+                                    nip.refs[req.base]!!.accessedAt = System.currentTimeMillis();
+                                    nip.refs[req.base]!!.value
+                                } else {
+                                    null
+                                }
+                            }
                         }
 
                         // nip.logger.info("Processing actions: ${req.path.joinToString { it.key }}")
