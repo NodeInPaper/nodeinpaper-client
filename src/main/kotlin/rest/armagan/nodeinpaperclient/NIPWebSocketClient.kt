@@ -20,7 +20,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                 wsEventMessage(jsonData)
             } catch (e: Exception) {
                 nip.logger.warning("An error occurred while processing a message from NodeInPaper server.")
-                nip.logger.warning(e.message)
+                e.printStackTrace();
             }
         }
     }
@@ -37,6 +37,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                             else -> nip.refs[req.base]?.value ?: nip
                         }
 
+                        // nip.logger.info("Processing actions: ${req.path.joinToString { it.key }}")
                         val response = nip.processActions(base, req.path);
                         // nip.logger.info("Response: $response, base: $base, path: ${req.path.joinToString { it.key }}")
                         if (msg.responseId != null) {
@@ -53,10 +54,8 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
 
                                     sendResponse(msg.responseId, WSMessageResponse(true, responseList));
                                 } else {
-                                    if (nip.isObject(response)) {
-                                        // val randomId = UUID.randomUUID().toString();
+                                    if (nip.isObject(response) && !req.noRef) {
                                         val id = response.hashCode().toString();
-                                        // nip.logger.info("Creating reference with id: $id, value: $response");
                                         nip.refs[id] = ClientReferenceItem(id, response, System.currentTimeMillis());
                                         sendResponse(msg.responseId, WSMessageResponse(true, ClientReferenceResponse(id)));
                                     } else {
@@ -69,7 +68,6 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                         }
                     } catch (e: Exception) {
                         nip.logger.warning("An error occurred while processing actions from NodeInPaper server.")
-                        nip.logger.warning(e.message)
                         e.printStackTrace();
                         if (msg.responseId !== null) {
                             sendResponse(msg.responseId, WSMessageResponse(false, e.message ?: "An error occurred while processing actions."))

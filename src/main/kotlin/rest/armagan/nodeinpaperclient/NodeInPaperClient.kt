@@ -37,6 +37,8 @@ class NodeInPaperClient : JavaPlugin() {
             60 * 20L,
             60 * 20L
         );
+
+        logger.info("NodeInPaperClient enabled.")
     }
 
     override fun onDisable() {
@@ -47,13 +49,49 @@ class NodeInPaperClient : JavaPlugin() {
     }
 
     private fun findFunction(obj: Any, action: Action): KFunction<*>? {
-        val memberFunction = obj::class.memberFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
+        val memberFunction = obj::class.memberFunctions.find {
+            it.name == action.key
+                    && it.parameters.size == action.args.size.plus(1)
+                    && it.parameters.drop(1).withIndex().all { (index, param) ->
+                val paramType = param.type.classifier as? KClass<*>
+                val arg = action.args.getOrNull(index)
+                if (arg != null && paramType != null) {
+                    paramType.isInstance(arg)
+                } else {
+                    false
+                }
+            }
+        }
         if (memberFunction != null) return memberFunction
 
-        val staticFunction = obj::class.staticFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
+        val staticFunction = obj::class.staticFunctions.find {
+            it.name == action.key
+                    && it.parameters.size == action.args.size.plus(1)
+                    && it.parameters.drop(1).withIndex().all { (index, param) ->
+                val paramType = param.type.classifier as? KClass<*>
+                val arg = action.args.getOrNull(index)
+                if (arg != null && paramType != null) {
+                    paramType.isInstance(arg)
+                } else {
+                    false
+                }
+            }
+        }
         if (staticFunction != null) return staticFunction
 
-        val extensionFunction = obj::class.memberExtensionFunctions.find { it.name == action.key && it.parameters.size == action.args.size.plus(1) }
+        val extensionFunction = obj::class.memberExtensionFunctions.find {
+            it.name == action.key
+                    && it.parameters.size == action.args.size.plus(1)
+                    && it.parameters.drop(1).withIndex().all { (index, param) ->
+                val paramType = param.type.classifier as? KClass<*>
+                val arg = action.args.getOrNull(index)
+                if (arg != null && paramType != null) {
+                    paramType.isInstance(arg)
+                } else {
+                    false
+                }
+            }
+        }
         if (extensionFunction != null) return extensionFunction
 
         return null
@@ -82,26 +120,37 @@ class NodeInPaperClient : JavaPlugin() {
                     val function =  findFunction(currentObj, action);
                     if (function != null) {
                         try {
+                            // logger.info("Calling function: ${action.key} with args: ${action.args.joinToString()}")
+
                             val args = action.args.mapIndexed { index, arg ->
                                 try {
-                                    val paramType = function.parameters[index + 1].type.classifier as KClass<*>
-                                    return@mapIndexed paramType.safeCast(arg) ?: arg;
-                                } catch (e: Exception) {
-                                    e.printStackTrace();
-                                    if (isObject(arg)) {
-                                        val ref = arg as Map<*, *>
-                                        if (ref.containsKey("__type__") && ref["__type__"] == "Reference") {
-                                            val id = ref["id"] as String
-                                            if (this.refs[id] != null) {
-                                                this.refs[id]!!.accessedAt = System.currentTimeMillis();
-                                                return@mapIndexed this.refs[id]!!.value ?: arg;
+                                    if (arg is Map<*, *> && arg["__type__"] == "Reference") {
+                                        val id = arg["id"] as? String
+                                        if (id != null && this.refs.containsKey(id)) {
+                                            this.refs[id]?.let {
+                                                it.accessedAt = System.currentTimeMillis()
+                                                return@mapIndexed it.value ?: arg
                                             }
+                                        } else {
+                                            return@mapIndexed arg
+                                        }
+                                    } else {
+                                        val paramType = function.parameters.getOrNull(index + 1)?.type?.classifier as? KClass<*>
+                                        if (paramType != null) {
+                                            return@mapIndexed paramType.safeCast(arg) ?: arg
+                                        } else {
+                                            return@mapIndexed arg
                                         }
                                     }
-                                    return@mapIndexed arg;
+
+                                } catch (e: Exception) {
+                                    logger.warning("An error occurred while casting argument: $arg to type: ${function.parameters.getOrNull(index + 1)?.type?.classifier}")
+                                    e.printStackTrace()
                                 }
                             }
+
                             // logger.info("Calling function: ${action.key} with args: ${args.joinToString()}")
+
                             currentObj = function.call(currentObj, *args.toTypedArray())
                         } catch (e: Exception) {
                             throw IllegalArgumentException("An error occurred while calling function: ${action.key}", e)

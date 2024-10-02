@@ -13,7 +13,8 @@ data class SingularExecuteRequest(
     val path: List<Action>,
     val sync: Boolean,
     val response: List<RequestResponseMapItem>,
-    val base: String = "Plugin"
+    val base: String = "Plugin",
+    val noRef: Boolean = false
 )
 data class GetReferenceRequest(val id: String, val path: List<Action>)
 
