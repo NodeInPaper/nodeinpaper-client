@@ -204,7 +204,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
             Runnable {
                 try {
                     isReconnecting = false;
-                    nip.logger.info("Attempting to reconnect to NodeInPaper server.")
+                    // nip.logger.info("Attempting to reconnect to NodeInPaper server.")
                     this.reconnect()
                 } catch (e: Exception) {
                     attemptReconnect()
