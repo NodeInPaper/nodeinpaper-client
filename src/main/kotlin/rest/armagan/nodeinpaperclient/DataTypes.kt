@@ -52,4 +52,23 @@ data class RegisterCommandRequest(
 data class RegisterEventRequest(
     val name: String,
     val priority: String,
+    val cancelConditions: CompiledConditionGroup,
+)
+
+data class CompiledConditionValue(
+    val type: String,
+    val value: String? = null,
+    val base: String? = null,
+    val path: List<Action>? = null
+)
+
+data class CompiledCondition(
+    val a: CompiledConditionValue,
+    val op: String,
+    val b: CompiledConditionValue
+)
+
+data class CompiledConditionGroup(
+    val and: List<CompiledCondition>? = null,
+    val or: List<CompiledCondition>? = null,
 )

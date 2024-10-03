@@ -4,10 +4,7 @@ import com.google.gson.Gson
 import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandMap
-import org.bukkit.event.Event
-import org.bukkit.event.EventPriority
-import org.bukkit.event.HandlerList
-import org.bukkit.event.Listener
+import org.bukkit.event.*
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.scheduler.BukkitTask
 import java.net.URI
@@ -285,7 +282,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
         registeredCommands.clear();
     }
 
-    fun registerEvent(className: String, priority: EventPriority) {
+    fun registerEvent(className: String, priority: EventPriority, cancelConditions: CompiledConditionGroup) {
         val clazz = loadClass(className) ?: return
 
         val self = this
@@ -297,6 +294,12 @@ class NodeInPaperClient : JavaPlugin(), Listener {
             this,
             priority,
             { listener: Listener, event: Event ->
+                logger.info("$cancelConditions, $event")
+                if (checkConditionGroup(cancelConditions, event)) {
+                    // logger.info("Event cancelled: $event");
+                    if (event is Cancellable) event.isCancelled = true;
+                }
+
                 val eventId = event.hashCode().toString()
                 self.refs[eventId] = ClientReferenceItem(eventId, event, System.currentTimeMillis())
                 // logger.info("Event received: $eventId, $event")
@@ -309,5 +312,66 @@ class NodeInPaperClient : JavaPlugin(), Listener {
 
     fun unregisterAllEvents() {
         HandlerList.unregisterAll(this as Listener);
+    }
+
+    private fun checkCondition(a: String, op: String, b: String): Boolean {
+        // logger.info("Checking condition: $a, $op, $b")
+        return try {
+            when (op) {
+                "==" -> a == b;
+                "!=" -> a != b;
+                ">" -> a.toDouble() > b.toDouble();
+                ">=" -> a.toDouble() >= b.toDouble();
+                "<" -> a.toDouble() < b.toDouble();
+                "<=" -> a.toDouble() <= b.toDouble();
+                "Contains" -> a.contains(b);
+                "NotContains" -> !a.contains(b);
+                "MatchesRegex" -> a.matches(b.toRegex());
+                "NotMatchesRegex" -> !a.matches(b.toRegex());
+                else -> false;
+            }
+        } catch (e: Exception) {
+            logger.warning("Error while comparing values ($a, $op, $b): ${e.message}");
+            false;
+        }
+    }
+
+    private fun processConditionValue(value: CompiledConditionValue, context: Any?): String {
+        return when (value.type) {
+            "Value" -> value.value as String;
+            "Path" -> {
+                val base = when (value.base) {
+                    "Context" -> context
+                    "Plugin" -> this
+                    else -> null;
+                }
+                processActions(base, value.path as List<Action>).toString();
+            }
+            else -> "";
+        }
+    }
+
+    private fun checkConditionGroup(group: CompiledConditionGroup, context: Any?): Boolean {
+        if (group.and !== null) {
+            group.and.forEach {
+                if (!checkCondition(
+                        processConditionValue(it.a, context),
+                        it.op,
+                        processConditionValue(it.b, context)
+                    )) return false;
+            }
+            return true;
+        }
+        if (group.or !== null) {
+            group.or.forEach {
+                if (checkCondition(
+                        processConditionValue(it.a, context),
+                        it.op,
+                        processConditionValue(it.b, context)
+                    )) return true;
+            }
+            return false;
+        }
+        return false;
     }
 }

@@ -158,7 +158,7 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
             }
             "RegisterEvent" -> {
                 val req = nip.gson.fromJson(nip.gson.toJson(msg.data), RegisterEventRequest::class.java);
-                nip.registerEvent(req.name, EventPriority.valueOf(req.priority));
+                nip.registerEvent(req.name, EventPriority.valueOf(req.priority.uppercase()), req.cancelConditions);
                 if (msg.responseId != null) {
                     sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                 }
