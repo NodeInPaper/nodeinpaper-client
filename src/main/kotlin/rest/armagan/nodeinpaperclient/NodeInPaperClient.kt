@@ -294,7 +294,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
             this,
             priority,
             { listener: Listener, event: Event ->
-                logger.info("$cancelConditions, $event")
+                 // logger.info("$cancelConditions, $event")
                 if (checkConditionGroup(cancelConditions, event)) {
                     // logger.info("Event cancelled: $event");
                     if (event is Cancellable) event.isCancelled = true;
