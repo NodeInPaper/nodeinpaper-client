@@ -179,7 +179,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                             }
 
                             // Argümanları işleme, hem Kotlin KFunction hem de Java Method destekleniyor
-                            logger.info("Args: ${action.args}")
+                            // logger.info("Args: ${action.args}")
                             val args = action.args.mapIndexed { index, arg ->
                                 try {
                                     if (arg.__type__ == "Reference") {
@@ -231,7 +231,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                                 }
                             }
 
-                            logger.info("Args after processing: $args, function: $function")
+                            // logger.info("Args after processing: $args, function: $function")
 
                             if (function is KFunction<*>) {
                                 currentObj = function.call(currentObj, *args.toTypedArray())
