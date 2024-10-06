@@ -108,6 +108,9 @@ class NodeInPaperClient : JavaPlugin(), Listener {
         return null
     }
 
+    fun logRef(name: String) {
+        logger.info("Ref: $name, Value: ${refs[name]?.value ?: "null"}")
+    }
 
     fun processActions(obj: Any?, actions: List<Action>): Any? {
         var currentObj: Any? = obj
