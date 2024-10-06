@@ -59,111 +59,131 @@ class NodeInPaperClient : JavaPlugin(), Listener {
         refClearerTask.cancel();
     }
 
-    private fun findFunction(obj: Any, action: Action): KFunction<*>? {
+    private fun findFunction(obj: Any, action: Action): Any? {
+        // Kotlin üye fonksiyonlarını bulma
         val memberFunction = obj::class.memberFunctions.find {
             it.name == action.key
-                    && it.parameters.size == action.args.size.plus(1)
+                    && it.parameters.size == action.args.size.plus(1) // İlk parametre receiver olduğu için 1 ekliyoruz
                     && it.parameters.drop(1).withIndex().all { (index, param) ->
                 val paramType = param.type.classifier as? KClass<*>
                 val arg = action.args.getOrNull(index)
-                if (arg != null && paramType != null) {
-                    paramType.isInstance(arg)
-                } else {
-                    false
-                }
+                arg != null && paramType != null && paramType.isInstance(arg.value)
             }
         }
         if (memberFunction != null) return memberFunction
 
+        // Kotlin statik fonksiyonlarını bulma
         val staticFunction = obj::class.staticFunctions.find {
             it.name == action.key
                     && it.parameters.size == action.args.size.plus(1)
                     && it.parameters.drop(1).withIndex().all { (index, param) ->
                 val paramType = param.type.classifier as? KClass<*>
                 val arg = action.args.getOrNull(index)
-                if (arg != null && paramType != null) {
-                    paramType.isInstance(arg)
-                } else {
-                    false
-                }
+                arg != null && paramType != null && paramType.isInstance(arg.value)
             }
         }
         if (staticFunction != null) return staticFunction
 
+        // Kotlin üye genişletme fonksiyonlarını bulma
         val extensionFunction = obj::class.memberExtensionFunctions.find {
             it.name == action.key
                     && it.parameters.size == action.args.size.plus(1)
                     && it.parameters.drop(1).withIndex().all { (index, param) ->
                 val paramType = param.type.classifier as? KClass<*>
                 val arg = action.args.getOrNull(index)
-                if (arg != null && paramType != null) {
-                    paramType.isInstance(arg)
-                } else {
-                    false
-                }
+                arg != null && paramType != null && paramType.isInstance(arg.value)
             }
         }
         if (extensionFunction != null) return extensionFunction
 
+        // Java metotlarını bulma
+        val javaClass = if (obj is Class<*>) obj else obj::class.java
+        val method = javaClass.methods.find { method ->
+            method.name == action.key
+                    && method.parameterCount == action.args.size
+                    && method.parameterTypes.withIndex().all { (index, paramType) ->
+                val arg = action.args.getOrNull(index)
+                arg != null && isStrictMatch(paramType, arg.value)
+            }
+        }
+        if (method != null) return method
+
         return null
     }
 
-    fun logRef(name: String) {
-        logger.info("Ref: $name, Value: ${refs[name]?.value ?: "null"}")
+    private fun isStrictMatch(paramType: Class<*>, argValue: Any?): Boolean {
+        // Eğer argüman null ise sadece referans tipi kabul edilir, ilkel tipler kabul edilmez.
+        if (argValue == null) {
+            return !paramType.isPrimitive
+        }
+
+        // Java'nın ilkel tipleri ve bunların Wrapper sınıfları için strict eşleşme kontrolü
+        return when (paramType) {
+            java.lang.Integer.TYPE -> argValue is Int
+            java.lang.Long.TYPE -> argValue is Long
+            java.lang.Double.TYPE -> argValue is Double
+            java.lang.Float.TYPE -> argValue is Float
+            java.lang.Boolean.TYPE -> argValue is Boolean
+            java.lang.Character.TYPE -> argValue is Char
+            java.lang.Byte.TYPE -> argValue is Byte
+            java.lang.Short.TYPE -> argValue is Short
+            else -> paramType.isInstance(argValue) // Diğer referans tipleri için normal instance kontrolü
+        }
     }
 
     fun processActions(obj: Any?, actions: List<Action>): Any? {
         var currentObj: Any? = obj
-
-        //logger.info("Processing actions: $obj, ${actions.joinToString { it.key }}")
 
         for (action in actions) {
             if (currentObj == null) return null
 
             when (action.type) {
                 "Get" -> {
-                    if (currentObj is Map<*, *>) {
-                        currentObj = currentObj[action.key];
-                    } else if (currentObj is List<*>) {
-                        currentObj = currentObj[action.key.toInt()];
+                    val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
+
+                    // Önce member properties, sonra extension, ardından statik özelliklere bakıyoruz.
+                    val property = clazz.memberProperties.firstOrNull { it.name == action.key }
+                        ?: clazz.memberExtensionProperties.firstOrNull { it.name == action.key }
+                        ?: clazz.staticProperties.firstOrNull { it.name == action.key }
+
+                    if (property != null) {
+                        property.isAccessible = true  // Erişimi açıyoruz
+
+                        currentObj = when (property) {
+                            is KProperty1<*, *> -> {
+                                (property as KProperty1<Any?, *>).get(currentObj)
+                            }
+                            is KProperty0<*> -> property.get()
+                            else -> throw IllegalArgumentException("Unsupported property type: ${property::class}")
+                        }
                     } else {
-                        val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
-
-                        // Önce member properties, sonra extension, ardından statik özelliklere bakıyoruz.
-                        val property = clazz.memberProperties.firstOrNull { it.name == action.key }
-                            ?: clazz.memberExtensionProperties.firstOrNull { it.name == action.key }
-                            ?: clazz.staticProperties.firstOrNull { it.name == action.key }
-
-                        if (property != null) {
-                            property.isAccessible = true;
-
-                            currentObj = when (property) {
-                                is KProperty1<*, *> -> {
-                                    // KProperty1'in çalışabilmesi için currentObj'nin type'ı property'nin receiver'ı olmalı
-                                    (property as KProperty1<Any?, *>).get(currentObj)
-                                }
-                                is KProperty0<*> -> property.get()
-                                else -> throw IllegalArgumentException("Unsupported property type: ${property::class}")
-                            }
-                        } else {
-                            // Eğer property bulunamazsa, bu sefer class'ın statik alanlarına bakıyoruz.
-                            try {
-                                val field = clazz.java.getField(action.key) // Statik field'ı kontrol et
-                                currentObj = field.get(null) // Statik olduğu için null context kullan
-                            } catch (e: NoSuchFieldException) {
-                                throw IllegalArgumentException("No property or static field found with name: ${action.key}")
-                            }
+                        // Eğer property bulunamazsa, bu sefer class'ın statik alanlarına bakıyoruz.
+                        try {
+                            val field = clazz.java.getField(action.key) // Statik field'ı kontrol et
+                            field.isAccessible = true  // Statik alanın erişimini açıyoruz
+                            currentObj = field.get(null) // Statik olduğu için null context kullan
+                        } catch (e: NoSuchFieldException) {
+                            throw IllegalArgumentException("No property or static field found with name: ${action.key}")
                         }
                     }
                 }
                 "Apply" -> {
+                    val clazz = if (currentObj is Class<*>) currentObj.kotlin else currentObj::class
                     val function = findFunction(currentObj, action)
+                        ?: clazz.java.methods.firstOrNull { it.name == action.key } // Statik metotları da kontrol et
+
                     if (function != null) {
                         try {
+                            if (function is KFunction<*>) {
+                                function.isAccessible = true  // Fonksiyonun erişimini açıyoruz
+                            }
+
+                            // Argümanları işleme, hem Kotlin KFunction hem de Java Method destekleniyor
+                            logger.info("Args: ${action.args}")
                             val args = action.args.mapIndexed { index, arg ->
                                 try {
-                                    if (arg is Map<*, *> && arg["__type__"] == "Reference") {
-                                        val id = arg["id"] as? String
+                                    if (arg.__type__ == "Reference") {
+                                        val id = arg.id;
                                         if (id != null && this.refs.containsKey(id)) {
                                             this.refs[id]?.let {
                                                 it.accessedAt = System.currentTimeMillis()
@@ -173,21 +193,53 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                                             return@mapIndexed arg
                                         }
                                     } else {
-                                        val paramType = function.parameters.getOrNull(index + 1)?.type?.classifier as? KClass<*>
-                                        if (paramType != null) {
-                                            return@mapIndexed paramType.safeCast(arg) ?: arg
+                                        // Eğer KFunction ise parametre türlerini kullanarak cast yap
+                                        val value = arg.value;
+                                        if (function is KFunction<*>) {
+                                            val paramType = function.parameters.getOrNull(index + 1)?.type?.classifier as? KClass<*>
+                                            if (paramType != null) {
+                                                return@mapIndexed paramType.safeCast(value) ?: value
+                                            } else {
+                                                return@mapIndexed value
+                                            }
+                                        }
+                                        // Eğer Java Method ise parametre türlerini kullanarak cast yap
+                                        else if (function is java.lang.reflect.Method) {
+                                            val paramType = function.parameterTypes.getOrNull(index)
+                                            if (paramType != null) {
+                                                // Argümanı parametre tipine cast etme
+                                                when (paramType) {
+                                                    java.lang.Integer.TYPE -> return@mapIndexed (value as? Number)?.toInt() ?: value
+                                                    java.lang.Long.TYPE -> return@mapIndexed (value as? Number)?.toLong() ?: value
+                                                    java.lang.Double.TYPE -> return@mapIndexed (value as? Number)?.toDouble() ?: value
+                                                    java.lang.Float.TYPE -> return@mapIndexed (value as? Number)?.toFloat() ?: value
+                                                    java.lang.Boolean.TYPE -> return@mapIndexed (value as? Boolean) ?: value
+                                                    java.lang.String::class.java -> return@mapIndexed (value as? String) ?: value
+                                                    else -> return@mapIndexed value
+                                                }
+                                            } else {
+                                                return@mapIndexed value
+                                            }
                                         } else {
-                                            return@mapIndexed arg
+                                            return@mapIndexed value
                                         }
                                     }
-
                                 } catch (e: Exception) {
-                                    logger.warning("An error occurred while casting argument: $arg to type: ${function.parameters.getOrNull(index + 1)?.type?.classifier}")
+                                    logger.warning("An error occurred while casting argument: $arg to type: ${function::class}")
                                     e.printStackTrace()
+                                    arg.value;
                                 }
                             }
 
-                            currentObj = function.call(currentObj, *args.toTypedArray())
+                            logger.info("Args after processing: $args, function: $function")
+
+                            if (function is KFunction<*>) {
+                                currentObj = function.call(currentObj, *args.toTypedArray())
+                            } else {
+                                // Java metotları için
+                                currentObj = (function as java.lang.reflect.Method).invoke(null, *args.toTypedArray())
+                            }
+
                         } catch (e: Exception) {
                             throw IllegalArgumentException("An error occurred while calling function: ${action.key}", e)
                         }
@@ -199,9 +251,8 @@ class NodeInPaperClient : JavaPlugin(), Listener {
             }
         }
 
-        return currentObj;
+        return currentObj
     }
-
 
 
     fun isObject(value: Any?): Boolean {

@@ -4,7 +4,7 @@
   <groupId>rest.armagan</groupId>
   <artifactId>nodeinpaperclient</artifactId>
   <name>nodeinpaperclient</name>
-  <version>0.0.1</version>
+  <version>0.0.2</version>
   <build>
     <sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
     <defaultGoal>clean package</defaultGoal>

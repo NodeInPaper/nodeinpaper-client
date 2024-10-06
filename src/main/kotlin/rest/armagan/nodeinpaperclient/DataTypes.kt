@@ -1,6 +1,7 @@
 package rest.armagan.nodeinpaperclient
 
-data class Action(val key: String, val type: String, val args: List<Any>)
+data class ActionArg(val __type__: String, val value: Any? = null, val id: String? = null)
+data class Action(val key: String, val type: String, val args: List<ActionArg>)
 
 data class WSEventMessage(val event: String, val data: Any?, val responseId: String? = null)
 

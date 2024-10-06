@@ -163,6 +163,24 @@ class NIPWebSocketClient(private val nip: NodeInPaperClient, serverUri: URI) : W
                     sendResponse(msg.responseId, WSMessageResponse(ok = true, data = true));
                 }
             }
+            "LogReference" -> {
+                val ref = nip.refs[msg.data as String];
+                if (ref != null) {
+                    nip.logger.info("Reference: ${ref.id}, accessedAt: ${ref.accessedAt}, value: ${ref.value}");
+                    // log properties, methods, etc.
+                    if (ref.value is Class<*>) {
+                        nip.logger.info("Class: ${ref.value.name}")
+                        ref.value.fields.forEach {
+                            nip.logger.info("Field: ${it.name}, type: ${it.type.name}")
+                        }
+                        ref.value.methods.forEach {
+                            nip.logger.info("Method: ${it.name}, returnType: ${it.returnType.name}")
+                        }
+                    }
+                } else {
+                    nip.logger.warning("Reference not found: ${msg.data}")
+                }
+            }
             else -> {
                 nip.logger.warning("Unknown event type received from NodeInPaper server: ${msg.event}")
             }
