@@ -24,6 +24,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
     lateinit var gson: Gson;
     lateinit var refs: MutableMap<String, ClientReferenceItem>;
     lateinit var registeredCommands: MutableMap<String, Command>;
+    var debugLogs: Boolean = false;
 
     override fun onEnable() {
         saveDefaultConfig();
@@ -35,6 +36,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
         this.ws.connect();
 
         val refTTL = config.getLong("reference-ttl-seconds", 7200);
+        this.debugLogs = config.getBoolean("debug-logs", false);
 
         this.refClearerTask = server.scheduler.runTaskTimerAsynchronously(
             this,
@@ -179,7 +181,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                             }
 
                             // Argümanları işleme, hem Kotlin KFunction hem de Java Method destekleniyor
-                            // logger.info("Args: ${action.args}")
+                            if (debugLogs) logger.info("Args: ${action.args}")
                             val args = action.args.mapIndexed { index, arg ->
                                 try {
                                     if (arg.__type__ == "Reference") {
@@ -231,7 +233,7 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                                 }
                             }
 
-                            // logger.info("Args after processing: $args, function: $function")
+                            if (debugLogs) logger.info("Args after processing: $args, function: $function")
 
                             if (function is KFunction<*>) {
                                 currentObj = function.call(currentObj, *args.toTypedArray())
@@ -241,7 +243,8 @@ class NodeInPaperClient : JavaPlugin(), Listener {
                             }
 
                         } catch (e: Exception) {
-                            throw IllegalArgumentException("An error occurred while calling function: ${action.key}", e)
+                            e.printStackTrace();
+                            throw IllegalArgumentException("An error occurred while calling function: $action")
                         }
                     } else {
                         throw IllegalArgumentException("No function found with name: ${action.key}")
